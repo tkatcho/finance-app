@@ -1,7 +1,7 @@
 mod connection;
 mod error;
 // mod constants;
- mod frame;
+mod frame;
 // mod handshake;
 
 pub use connection::WebSocket;
