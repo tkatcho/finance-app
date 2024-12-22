@@ -1,5 +1,3 @@
-use std::net::TcpStream;
-
 #[derive(Debug)]
 pub struct Frame {
     pub fin: bool,
