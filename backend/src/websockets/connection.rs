@@ -137,6 +137,9 @@ impl WebSocket {
 
     pub fn read_frame(&mut self) -> Result<Frame, std::io::Error> {
         // Read first 2 bytes (header)
+        //let x = Frame::parse(fin, opcode, masked, payload_len)
+        //fix this function to use the parse
+
         let header = self.read_exact(2)?;
         let first_byte = header[0];
         let second_byte = header[1];
