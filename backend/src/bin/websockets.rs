@@ -1,13 +1,6 @@
-use finance_app::websockets::{Frame, OpCode, WebSocket};
+use finance_app::websockets::{OpCode, WebSocket};
 use std::net::TcpListener;
-use std::sync::mpsc;
 use std::thread;
-
-enum WebSocketEvent {
-    Message(Vec<u8>),
-    Close,
-    Error(String),
-}
 
 fn main() -> std::io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:8080").expect("Failed to bind to address");
@@ -43,6 +36,30 @@ fn handle_connection(stream: std::net::TcpStream) {
         }
     };
 
-    
+    ws.send("Hello from the server!".as_bytes().to_vec())
+        .expect("Failed to send message");
 
+    loop {
+        match ws.read_frame() {
+            Ok(frame) => {
+                println!("Received frame: {:?}", frame);
+                match frame.op_code {
+                    OpCode::Text => {
+                        let message = String::from_utf8(frame.payload.clone()).unwrap();
+                        println!("Received message: {}", message);
+                        ws.send(frame.payload).expect("Failed to send message");
+                    }
+                    OpCode::ConnectionClosed => {
+                        println!("Connection closed");
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to read frame: {}", e);
+                break;
+            }
+        }
+    }
 }

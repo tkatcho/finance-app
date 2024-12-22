@@ -7,7 +7,10 @@ use sha1::{Digest, Sha1};
 
 use super::Frame;
 use super::Request;
-use crate::websockets::OpCode;
+use crate::websockets::{
+    OpCode, OpCode::Binary, OpCode::ConnectionClosed, OpCode::Continuation, OpCode::Ping,
+    OpCode::Pong, OpCode::Text,
+};
 
 #[derive(Debug)]
 pub struct WebSocket {
@@ -133,7 +136,70 @@ impl WebSocket {
     }
 
     pub fn read_frame(&mut self) -> Result<Frame, std::io::Error> {
-        Frame::parse(false, OpCode::ConnectionClosed, false, 15)
+        // Read first 2 bytes (header)
+        let header = self.read_exact(2)?;
+        let first_byte = header[0];
+        let second_byte = header[1];
+
+        // Parse header fields
+        let fin = (first_byte & 0x80) != 0;
+        let opcode = match first_byte & 0x0F {
+            0x0 => Continuation,
+            0x1 => Text,
+            0x2 => Binary,
+            0x8 => ConnectionClosed,
+            0x9 => Ping,
+            0xA => Pong,
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Invalid opcode",
+                ))
+            }
+        };
+        let mask = (second_byte & 0x80) != 0;
+        let mut payload_len = (second_byte & 0x7F) as u64;
+
+        // Handle extended payload lengths
+        if payload_len == 126 {
+            let len_bytes = self.read_exact(2)?;
+            payload_len = u16::from_be_bytes([len_bytes[0], len_bytes[1]]) as u64;
+        } else if payload_len == 127 {
+            let len_bytes = self.read_exact(8)?;
+            payload_len = u64::from_be_bytes(len_bytes.try_into().unwrap());
+        }
+
+        // Read mask key if present
+        let mask_key: Option<[u8; 4]> = if mask {
+            let mask_bytes = self.read_exact(4)?;
+            Some(mask_bytes.try_into().unwrap())
+        } else {
+            None
+        };
+
+        // Read payload
+        let mut payload = self.read_exact(payload_len as usize)?;
+
+        // Apply mask if present
+        if let Some(mask_key) = mask_key {
+            for i in 0..payload.len() {
+                payload[i] ^= mask_key[i % 4];
+            }
+        }
+
+        Ok(Frame {
+            fin,
+            op_code: opcode,
+            mask,
+            payload_len,
+            mask_key,
+            payload,
+        })
+    }
+
+    pub fn send(&mut self, payload: Vec<u8>) -> Result<(), std::io::Error> {
+        let frame = Frame::new(OpCode::Text, payload);
+        self.write_all(&frame.to_bytes())
     }
 }
 pub fn generate_accept_key(client_key: &str) -> String {
