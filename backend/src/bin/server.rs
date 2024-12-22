@@ -30,4 +30,3 @@ async fn root() -> axum::Json<serde_json::Value> {
         "message": "Welcome to your Finance App Backend!"
     }))
 }
-//hey
