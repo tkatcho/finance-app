@@ -15,7 +15,6 @@ use crate::websockets::{
 #[derive(Debug)]
 pub struct WebSocket {
     stream: TcpStream,
-    is_client: bool,
     state: ConnectionState,
 }
 
@@ -27,12 +26,11 @@ enum ConnectionState {
     Closed,
     Bitchass,
 }
-
+//fix this to put the handshakes in the handshake.rs
 impl WebSocket {
     pub fn new(stream: TcpStream, is_client: bool) -> Self {
         WebSocket {
             stream,
-            is_client,
             state: ConnectionState::Connecting,
         }
     }
@@ -137,53 +135,51 @@ impl WebSocket {
 
     pub fn read_frame(&mut self) -> Result<Frame, std::io::Error> {
         // Read first 2 bytes (header)
-        //let x = Frame::parse(fin, opcode, masked, payload_len)
-        //fix this function to use the parse
-
         let header = self.read_exact(2)?;
-        let first_byte = header[0];
-        let second_byte = header[1];
 
-        // Parse header fields
-        let fin = (first_byte & 0x80) != 0;
-        let opcode = match first_byte & 0x0F {
-            0x0 => Continuation,
-            0x1 => Text,
-            0x2 => Binary,
-            0x8 => ConnectionClosed,
-            0x9 => Ping,
-            0xA => Pong,
-            _ => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Invalid opcode",
-                ))
-            }
-        };
-        let mask = (second_byte & 0x80) != 0;
-        let mut payload_len = (second_byte & 0x7F) as u64;
+        // Parse header using Frame::parse
+        let frame = Frame::parse(
+            (header[0] & 0x80) != 0, // fin
+            match header[0] & 0x0F {
+                // opcode
+                0x0 => Continuation,
+                0x1 => Text,
+                0x2 => Binary,
+                0x8 => ConnectionClosed,
+                0x9 => Ping,
+                0xA => Pong,
+                _ => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Invalid opcode",
+                    ))
+                }
+            },
+            (header[1] & 0x80) != 0,   // mask
+            (header[1] & 0x7F) as u64, // payload_len
+        )?;
 
         // Handle extended payload lengths
-        if payload_len == 126 {
+        let actual_payload_len = if frame.payload_len == 126 {
             let len_bytes = self.read_exact(2)?;
-            payload_len = u16::from_be_bytes([len_bytes[0], len_bytes[1]]) as u64;
-        } else if payload_len == 127 {
+            u16::from_be_bytes([len_bytes[0], len_bytes[1]]) as u64
+        } else if frame.payload_len == 127 {
             let len_bytes = self.read_exact(8)?;
-            payload_len = u64::from_be_bytes(len_bytes.try_into().unwrap());
-        }
+            u64::from_be_bytes(len_bytes.try_into().unwrap())
+        } else {
+            frame.payload_len
+        };
 
-        // Read mask key if present
-        let mask_key: Option<[u8; 4]> = if mask {
+        // Read mask key if needed
+        let mask_key: Option<[u8; 4]> = if frame.mask {
             let mask_bytes = self.read_exact(4)?;
             Some(mask_bytes.try_into().unwrap())
         } else {
             None
         };
 
-        // Read payload
-        let mut payload = self.read_exact(payload_len as usize)?;
-
-        // Apply mask if present
+        // Read and unmask payload
+        let mut payload = self.read_exact(actual_payload_len as usize)?;
         if let Some(mask_key) = mask_key {
             for i in 0..payload.len() {
                 payload[i] ^= mask_key[i % 4];
@@ -191,10 +187,10 @@ impl WebSocket {
         }
 
         Ok(Frame {
-            fin,
-            op_code: opcode,
-            mask,
-            payload_len,
+            fin: frame.fin,
+            op_code: frame.op_code,
+            mask: frame.mask,
+            payload_len: actual_payload_len,
             mask_key,
             payload,
         })
