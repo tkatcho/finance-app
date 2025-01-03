@@ -1,7 +1,7 @@
 mod checksum;
 mod connection;
 mod headers;
-mod socket;
+pub mod socket;
 mod tests;
 
 use std::io::Error;

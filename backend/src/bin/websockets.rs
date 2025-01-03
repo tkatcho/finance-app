@@ -1,34 +1,58 @@
-use finance_app::websockets::{OpCode, WebSocket};
-use std::net::TcpListener;
-use std::thread;
+use finance_app::{
+    tcp::socket::RawSocket,
+    websockets::{OpCode, WebSocket},
+};
+use socket2::Socket;
+use std::io::{self};
 
-fn main() -> std::io::Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:8080").expect("Failed to bind to address");
-    println!("WebSocket server listening on port 8080");
+fn main() -> io::Result<()> {
+    println!("Creating server socket...");
+    let mut server = RawSocket::new()?;
+    server.bind("127.0.0.1", 8080)?;
 
-    // Create a channel for each new connection
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                println!("New connection: {:?}", stream);
-                thread::spawn(move || {
-                    handle_connection(stream);
-                });
+    println!("Server listening on 127.0.0.1:8080");
+    println!("Try connecting with: netcat 127.0.0.1 8080 or telnet 127.0.0.1 8080");
+
+    let (client_socket, addr) = loop {
+        match server.accept() {
+            Ok((socket, addr)) => {
+                println!("Accepted connection from {}", addr);
+                break (socket, addr); // Return the client socket
+            }
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                continue;
             }
             Err(e) => {
-                eprintln!("Failed to establish a connection: {}", e);
+                eprintln!("Accept error: {}", e);
+                continue;
             }
         }
-    }
+    };
+
+    println!("Server Ready");
+    let peer_addr = match addr.ip() {
+        std::net::IpAddr::V4(ipv4) => ipv4.octets(),
+        _ => [0; 4],
+    };
+    let peer_port = addr.port();
+
+    handle_connection(client_socket, peer_addr, peer_port);
 
     Ok(())
 }
-
-fn handle_connection(stream: std::net::TcpStream) {
-    println!("Handling connection: {:?}", stream);
+fn handle_connection(socket: Socket, peer_addr: [u8; 4], peer_port: u16) {
+    println!("Handling connection");
+    let sock = match RawSocket::new_with_params(socket, peer_addr, peer_port) {
+        Ok(sock) => sock,
+        Err(e) => {
+            eprintln!("Failed to create RawSocket: {}", e);
+            return;
+        }
+    };
 
     // Create WebSocket connection
-    let mut ws = match WebSocket::accept(stream) {
+    let mut ws = match WebSocket::accept(sock, peer_addr, peer_port) {
         Ok(ws) => ws,
         Err(e) => {
             println!("{}", e);

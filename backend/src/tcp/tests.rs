@@ -2,8 +2,6 @@
 mod tests {
     use crate::tcp::{IpHeader, TcpHeader};
 
-    use super::*;
-
     #[test]
     fn test_ip_header_creation() {
         let src_addr = [192, 168, 1, 1];
