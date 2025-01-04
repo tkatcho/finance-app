@@ -2,7 +2,6 @@
 mod tests {
     use crate::tcp::{IpHeader, TcpHeader};
 
-    use super::*;
 
     #[test]
     fn test_ip_header_creation() {

@@ -28,7 +28,7 @@ enum ConnectionState {
 }
 //fix this to put the handshakes in the handshake.rs
 impl WebSocket {
-    pub fn new(stream: TcpStream, is_client: bool) -> Self {
+    pub fn new(stream: TcpStream) -> Self {
         WebSocket {
             stream,
             state: ConnectionState::Connecting,
@@ -36,7 +36,7 @@ impl WebSocket {
     }
 
     pub fn accept(stream: TcpStream) -> Result<Self, Error> {
-        let mut ws = WebSocket::new(stream, false);
+        let mut ws = WebSocket::new(stream);
 
         let request = ws.read_handshake_request()?;
 
@@ -67,6 +67,15 @@ impl WebSocket {
         self.stream.write_all(response.as_bytes())?;
 
         Ok(())
+    }
+
+    pub fn send_pong(&mut self, payload: Vec<u8>) -> Result<(), Error> {
+        let frame = Frame::new(OpCode::Pong, payload);
+        self.write_all(&frame.to_bytes())
+    }
+    pub fn send_ping(&mut self, payload: Vec<u8>) -> Result<(), Error> {
+        let frame = Frame::new(OpCode::Ping, payload);
+        self.write_all(&frame.to_bytes())
     }
 
     pub fn read_handshake_request(&mut self) -> Result<Request, Error> {
