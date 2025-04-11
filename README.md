@@ -1,3 +1,6 @@
+So far only websockets made from scratch from a tcp server are working. (Made in rust) 
+
+
 # Finance App
 
 Welcome to the Finance App! This application helps you track all types of finances efficiently.
